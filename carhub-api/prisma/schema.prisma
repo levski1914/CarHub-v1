@@ -1,0 +1,125 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  vehicles Vehicle[]   // 👈 добави
+documents Document[]
+  notificationSettings NotificationSettings?
+  notificationLogs     NotificationLog[]
+}
+
+
+model Vehicle {
+  id        String   @id @default(cuid())
+  plate     String
+  make      String
+  model     String
+  createdAt DateTime @default(now())
+documents Document[]
+  userId String       // 👈 добави
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade) // 👈 добави
+
+  obligations Obligation[]
+  notificationLogs NotificationLog[]
+}
+
+model Obligation {
+  id        String  @id @default(cuid())
+  vehicleId String
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+documents Document[]
+  type      ObligationType
+  dueDate   DateTime
+  createdAt DateTime       @default(now())
+
+  // NEW
+  source    String    @default("manual") // "manual" | "integration"
+  checkedAt DateTime?
+  meta      Json?
+
+  // ✅ back-relations
+  notificationLogs NotificationLog[]
+}
+
+model NotificationSettings {
+  id           String  @id @default(cuid())
+  userId       String  @unique
+  emailEnabled Boolean @default(false)
+  smsEnabled   Boolean @default(false)
+  email        String?
+  phone        String?
+
+  // напр. [7,3,1]
+  daysBefore Int[] @default([7, 3, 1])
+
+  // кога да пращаме (локално за потребителя)
+  sendHour   Int    @default(9)
+  sendMinute Int    @default(0)
+  timezone   String @default("Europe/Sofia")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+model Document {
+  id           String   @id @default(cuid())
+  userId       String
+  vehicleId    String?
+  obligationId String?
+
+  name         String
+  mimeType     String
+  sizeBytes    Int
+  storageKey   String   // filename/path on disk (или S3 key)
+  createdAt    DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicle      Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  obligation   Obligation? @relation(fields: [obligationId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([vehicleId])
+  @@index([obligationId])
+}
+
+model NotificationLog {
+  id           String @id @default(cuid())
+  userId       String
+  vehicleId    String
+  obligationId String
+
+  channel      String // "email" | "sms"
+  kind         String // "before_due" | "overdue"
+  scheduledFor DateTime
+  sentAt       DateTime?
+  status       String // "queued" | "sent" | "failed"
+  error        String?
+
+  // за да не пращаме 2 пъти за същото нещо
+  dedupeKey String @unique
+
+  createdAt DateTime @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicle    Vehicle    @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  obligation Obligation @relation(fields: [obligationId], references: [id], onDelete: Cascade)
+}
+
+enum ObligationType {
+  GO
+  GTP
+  TAX
+  VIGNETTE
+}

@@ -7,8 +7,11 @@ const AUTH_PAGES = ["/login"]; // можеш да добавиш и /register а
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  const token = req.cookies.get("access_token")?.value;
-  const isAuthed = !!token;
+  const access = req.cookies.get("access_token")?.value;
+  const refresh = req.cookies.get("refresh_token")?.value;
+
+  // ✅ ако има refresh, приеми че сесията може да се възстанови
+  const isAuthed = !!access || !!refresh;
 
   const isProtected = PROTECTED.some(
     (p) => pathname === p || pathname.startsWith(p + "/"),
@@ -18,7 +21,7 @@ export function middleware(req: NextRequest) {
     (p) => pathname === p || pathname.startsWith(p + "/"),
   );
 
-  // ✅ 1) ако НЕ е логнат и отваря protected -> към login
+  // 1) ако няма access И няма refresh и отваря protected -> login
   if (!isAuthed && isProtected) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
@@ -26,7 +29,7 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // ✅ 2) ако е логнат и отваря login -> към /vehicles
+  // 2) ако е "authed" (има access или refresh) и отваря login -> vehicles
   if (isAuthed && isAuthPage) {
     const url = req.nextUrl.clone();
     url.pathname = "/vehicles";
@@ -34,8 +37,7 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // ✅ 3) по желание: ако е логнат и отвори "/" (landing) -> към /vehicles
-  // ако НЕ искаш това, махни блока
+  // 3) landing
   if (isAuthed && pathname === "/") {
     const url = req.nextUrl.clone();
     url.pathname = "/vehicles";

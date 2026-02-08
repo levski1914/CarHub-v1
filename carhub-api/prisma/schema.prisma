@@ -8,48 +8,83 @@ generator client {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  createdAt    DateTime @default(now())
+  id               String         @id @default(cuid())
+  email            String         @unique
+  passwordHash     String
+  createdAt        DateTime       @default(now())
+  refreshTokens    RefreshToken[]
+  refreshTokenHash String? // nullable
+  historyEvents    HistoryEvent[]
+  vehicles         Vehicle[] // 👈 добави
+  documents        Document[]
 
-  vehicles Vehicle[]   // 👈 добави
-documents Document[]
+  emailVerified     Boolean   @default(false)
+  emailVerifyToken  String?
+  emailVerifySentAt DateTime?
+
   notificationSettings NotificationSettings?
   notificationLogs     NotificationLog[]
+  inboxNotifications   InboxNotification[]
 }
 
+model HistoryEvent {
+  id           String  @id @default(cuid())
+  userId       String
+  vehicleId    String?
+  obligationId String?
+  documentId   String?
+
+  kind        String // "doc_uploaded" | "doc_deleted" | ...
+  title       String
+  description String?
+  meta        Json?
+
+  createdAt DateTime @default(now())
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicle    Vehicle?    @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  obligation Obligation? @relation(fields: [obligationId], references: [id], onDelete: Cascade)
+  document   Document?   @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([vehicleId, createdAt])
+  @@index([obligationId, createdAt])
+  @@index([documentId, createdAt])
+}
 
 model Vehicle {
-  id        String   @id @default(cuid())
+  id        String     @id @default(cuid())
   plate     String
   make      String
   model     String
-  createdAt DateTime @default(now())
-documents Document[]
-  userId String       // 👈 добави
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade) // 👈 добави
+  createdAt DateTime   @default(now())
+  documents Document[]
+  userId    String // 👈 добави
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade) // 👈 добави
 
-  obligations Obligation[]
+  obligations      Obligation[]
   notificationLogs NotificationLog[]
+  historyEvents    HistoryEvent[]
 }
 
 model Obligation {
-  id        String  @id @default(cuid())
+  id        String         @id @default(cuid())
   vehicleId String
-  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
-documents Document[]
+  vehicle   Vehicle        @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  documents Document[]
   type      ObligationType
   dueDate   DateTime
   createdAt DateTime       @default(now())
 
   // NEW
-  source    String    @default("manual") // "manual" | "integration"
-  checkedAt DateTime?
-  meta      Json?
-
+  source           String            @default("manual") // "manual" | "integration"
+  checkedAt        DateTime?
+  meta             Json?
   // ✅ back-relations
   notificationLogs NotificationLog[]
+  historyEvents    HistoryEvent[]
+
+  @@unique([vehicleId, type])
 }
 
 model NotificationSettings {
@@ -73,21 +108,39 @@ model NotificationSettings {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String
+  revoked   Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
 model Document {
-  id           String   @id @default(cuid())
+  id           String  @id @default(cuid())
   userId       String
   vehicleId    String?
   obligationId String?
 
-  name         String
-  mimeType     String
-  sizeBytes    Int
-  storageKey   String   // filename/path on disk (или S3 key)
-  createdAt    DateTime @default(now())
+  name       String
+  mimeType   String
+  sizeBytes  Int
+  storageKey String
 
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  vehicle      Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
-  obligation   Obligation? @relation(fields: [obligationId], references: [id], onDelete: SetNull)
+  category DocumentCategory
+
+  createdAt DateTime @default(now())
+
+  user          User           @relation(fields: [userId], references: [id])
+  vehicle       Vehicle?       @relation(fields: [vehicleId], references: [id])
+  obligation    Obligation?    @relation(fields: [obligationId], references: [id])
+  historyEvents HistoryEvent[]
 
   @@index([userId])
   @@index([vehicleId])
@@ -117,9 +170,45 @@ model NotificationLog {
   obligation Obligation @relation(fields: [obligationId], references: [id], onDelete: Cascade)
 }
 
+model InboxNotification {
+  id     String @id @default(cuid())
+  userId String
+
+  // "reminder" | "system" | "activity"
+  type  String
+  title String
+  body  String?
+  href  String?
+  meta  Json?
+
+  // за да не спамим системни (email unverified / notifications off)
+  dedupeKey String? @unique
+
+  readAt    DateTime?
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@index([userId, deletedAt])
+}
+
 enum ObligationType {
   GO
   GTP
   TAX
   VIGNETTE
+}
+
+enum DocumentCategory {
+  GO
+  GTP
+  VIGNETTE
+  TAX
+  CREDIT
+  SERVICE
+  OTHER
 }

@@ -5,6 +5,7 @@ import { chromium } from 'playwright';
 import { GtpService } from 'src/integration/gtp/gtp.service';
 import { checkVignette } from 'src/integration/vignette/vignette.checker';
 import { GoService } from 'src/integration/go/go.service';
+import { HistoryService } from 'src/history/history.service';
 
 type EnrichResponse = {
   vehicleId: string;
@@ -26,6 +27,7 @@ export class VehiclesService {
     private prisma: PrismaService,
     private go: GoService,
     private gtp: GtpService,
+    private history: HistoryService,
   ) {}
 
   // ---------- helpers ----------
@@ -81,6 +83,13 @@ export class VehiclesService {
         model: data.model.trim(),
       },
     });
+    await this.history.log({
+      userId,
+      kind: 'vehicle_created',
+      title: 'Добавен автомобил',
+      description: `${v.plate} · ${v.make} ${v.model}`,
+      vehicleId: v.id,
+    });
 
     return {
       id: v.id,
@@ -117,6 +126,13 @@ export class VehiclesService {
         model: data.model?.trim() ?? undefined,
       },
     });
+    await this.history.log({
+      userId,
+      kind: 'vehicle_updated',
+      title: 'Редакция на автомобил',
+      description: `${updated.plate} · ${updated.make} ${updated.model}`,
+      vehicleId: updated.id,
+    });
 
     return {
       id: updated.id,
@@ -128,8 +144,17 @@ export class VehiclesService {
   }
 
   async deleteVehicle(userId: string, id: string) {
-    await this.requireVehicleOwned(userId, id);
+    const vehicle = await this.requireVehicleOwned(userId, id);
     await this.prisma.vehicle.delete({ where: { id } });
+
+    await this.history.log({
+      userId,
+      kind: 'vehicle_deleted',
+      title: 'Изтрит автомобил',
+      description: `${vehicle.plate} · ${vehicle.make} ${vehicle.model}`,
+      vehicleId: vehicle.id,
+    });
+
     return { status: 'ok' };
   }
 
@@ -149,6 +174,49 @@ export class VehiclesService {
       dueDate: o.dueDate.toISOString(),
       status: this.statusFromDue(o.dueDate),
     }));
+  }
+  async upsertObligation(
+    userId: string,
+    vehicleId: string,
+    type: ObligationType,
+    dueDateISO: string,
+  ) {
+    await this.requireVehicleOwned(userId, vehicleId);
+
+    const dueDate = new Date(dueDateISO);
+
+    const obligation = await this.prisma.obligation.upsert({
+      where: {
+        vehicleId_type: { vehicleId, type },
+      },
+      update: {
+        dueDate,
+        source: 'manual',
+      },
+      create: {
+        vehicleId,
+        type,
+        dueDate,
+        source: 'manual',
+      },
+    });
+    await this.history.log({
+      userId,
+      kind: 'obligation_updated',
+      title: 'Промяна на задължение',
+      description: `${type} до ${dueDate.toLocaleDateString('bg-BG')}`,
+      vehicleId,
+      obligationId: obligation.id,
+      meta: { type, dueDate },
+    });
+
+    return {
+      id: obligation.id,
+      vehicleId: obligation.vehicleId,
+      type: obligation.type,
+      dueDate: obligation.dueDate.toISOString(),
+      status: this.statusFromDue(obligation.dueDate),
+    };
   }
 
   async createObligation(
@@ -238,6 +306,22 @@ export class VehiclesService {
             : 'Вече е проверено',
         });
       }
+
+      await this.history.log({
+        userId,
+        kind: 'enrich_checked',
+        title: 'Автоматична проверка',
+        description: `Проверени: ${checks.join(', ')}`,
+        vehicleId,
+        meta: {
+          results: results.map((r) => ({
+            check: r.check,
+            status: r.status,
+            validUntil: r.validUntil,
+          })),
+        },
+      });
+
       return { vehicleId, results };
     }
 

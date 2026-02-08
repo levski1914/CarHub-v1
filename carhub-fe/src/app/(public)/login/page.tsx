@@ -94,11 +94,6 @@ export default function LoginPage() {
               </Button>
             </TabsContent>
           </Tabs>
-
-          <p className="text-xs text-muted-foreground">
-            * За MVP токенът се пази локално. По-късно ще минем на refresh +
-            cookies.
-          </p>
         </CardContent>
       </Card>
     </div>

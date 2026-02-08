@@ -26,10 +26,34 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
+import { useRef } from "react";
+import { HelpTip } from "@/components/ui/HelpTip";
 /** ✅ ВАЖНО: типовете за картите трябва да са enum ключове, не български стрингове */
 const SUMMARY_TYPES = ["GO", "GTP", "VIGNETTE", "TAX"] as const;
 type SummaryType = (typeof SUMMARY_TYPES)[number];
+const DOC_CATEGORIES = [
+  "GO",
+  "GTP",
+  "VIGNETTE",
+  "TAX",
+  "SERVICE",
+  "CREDIT",
+  "OTHER",
+] as const;
+const obligationTypeForDoc: Partial<Record<DocCategory, SummaryType>> = {
+  GO: "GO",
+  GTP: "GTP",
+  VIGNETTE: "VIGNETTE",
+  TAX: "TAX",
+};
+const DOC_TO_OBLIGATION: Partial<Record<DocCategory, Obligation["type"]>> = {
+  GO: "GO",
+  GTP: "GTP",
+  VIGNETTE: "VIGNETTE",
+  TAX: "TAX",
+};
+
+type DocCategory = (typeof DOC_CATEGORIES)[number];
 
 function fmtDate(iso?: string) {
   if (!iso) return "—";
@@ -86,9 +110,22 @@ export default function VehicleDetailsPage() {
   const [obligations, setObligations] = useState<Obligation[]>([]);
   const [docs, setDocs] = useState<DocumentRow[]>([]);
   const [err, setErr] = useState("");
+  const [docCategory, setDocCategory] = useState<DocCategory>("GO");
+  const [docObligationId, setDocObligationId] = useState<string | null>(null);
 
   const [enriching, setEnriching] = useState(false);
   const [enrichRes, setEnrichRes] = useState<EnrichResponse | null>(null);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualType, setManualType] = useState<
+    "GO" | "GTP" | "VIGNETTE" | "TAX"
+  >("GO");
+  const [manualDueDate, setManualDueDate] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
+  const [manualSaving, setManualSaving] = useState(false);
+  const [docQuery, setDocQuery] = useState("");
+  const [deleteDoc, setDeleteDoc] = useState<DocumentRow | null>(null);
+  const [deletingDoc, setDeletingDoc] = useState(false);
 
   // edit vehicle modal
   const [editOpen, setEditOpen] = useState(false);
@@ -99,7 +136,7 @@ export default function VehicleDetailsPage() {
 
   // upload
   const [uploading, setUploading] = useState(false);
-
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   // captcha (GTP)
   const [gtpCaptchaOpen, setGtpCaptchaOpen] = useState(false);
   const [gtpCaptchaImg, setGtpCaptchaImg] = useState<string | null>(null);
@@ -127,11 +164,24 @@ export default function VehicleDetailsPage() {
       .then(setDocs)
       .catch(() => {});
   }, [id]);
+  useEffect(() => {
+    setDocObligationId(null);
+  }, [docCategory]);
 
   const obligationsSorted = useMemo(
     () => [...obligations].sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
     [obligations],
   );
+  const obligationsForDoc = useMemo(() => {
+    const type = obligationTypeForDoc[docCategory];
+    if (!type) return [];
+    return obligationsSorted.filter((o) => o.type === type);
+  }, [docCategory, obligationsSorted]);
+  const obligationsForDocLink = useMemo(() => {
+    const type = DOC_TO_OBLIGATION[docCategory];
+    if (!type) return [];
+    return obligationsSorted.filter((o) => o.type === type);
+  }, [docCategory, obligationsSorted]);
 
   /**
    * ✅ Next due per type:
@@ -179,6 +229,35 @@ export default function VehicleDetailsPage() {
       setEnriching(false);
     }
   }
+  function openManual(t: "GO" | "GTP" | "VIGNETTE" | "TAX") {
+    setErr("");
+    setManualType(t);
+    setManualDueDate(new Date().toISOString().slice(0, 10));
+    setManualOpen(true);
+  }
+  async function saveManual() {
+    setErr("");
+    setManualSaving(true);
+    try {
+      const iso = new Date(manualDueDate + "T12:00:00").toISOString();
+
+      const updated = await api.upsertObligation(id, manualType, {
+        dueDate: iso,
+      });
+
+      // локален update (по-бързо и clean)
+      setObligations((prev) => {
+        const rest = prev.filter((o) => o.type !== updated.type);
+        return [...rest, updated];
+      });
+
+      setManualOpen(false);
+    } catch (e: any) {
+      setErr(e.message ?? "Грешка");
+    } finally {
+      setManualSaving(false);
+    }
+  }
 
   async function saveVehicle() {
     if (!vehicle) return;
@@ -219,7 +298,13 @@ export default function VehicleDetailsPage() {
     setErr("");
     setUploading(true);
     try {
-      const created = await docsApi.upload({ file, vehicleId: id });
+      const created = await docsApi.upload({
+        file,
+        vehicleId: id,
+        category: docCategory,
+        obligationId: docObligationId ?? undefined,
+      });
+
       setDocs((prev) => [created, ...prev]);
     } catch (e: any) {
       setErr(e.message ?? "Upload error");
@@ -227,6 +312,36 @@ export default function VehicleDetailsPage() {
       setUploading(false);
     }
   }
+
+  async function confirmDeleteDoc(d: DocumentRow) {
+    setErr("");
+    setDeletingDoc(true);
+    try {
+      await docsApi.delete(d.id);
+      setDocs((prev) => prev.filter((x) => x.id !== d.id));
+      setDeleteDoc(null);
+    } catch (e: any) {
+      setErr(e.message ?? "Грешка при изтриване");
+    } finally {
+      setDeletingDoc(false);
+    }
+  }
+
+  const filteredDocs = useMemo(() => {
+    const q = docQuery.trim().toLowerCase();
+    if (!q) return docs;
+    return docs.filter((d) => d.name.toLowerCase().includes(q));
+  }, [docs, docQuery]);
+
+  const docsByCategory = useMemo(() => {
+    const map: Record<string, DocumentRow[]> = {};
+    for (const d of filteredDocs) {
+      const key = d.category || "OTHER";
+      if (!map[key]) map[key] = [];
+      map[key].push(d);
+    }
+    return map;
+  }, [filteredDocs]);
 
   return (
     <div className="max-w-5xl mx-auto p-4 space-y-4">
@@ -255,9 +370,15 @@ export default function VehicleDetailsPage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Button onClick={enrich} disabled={!vehicle || enriching}>
-            {enriching ? "Проверяваме..." : "Автопопълни"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button onClick={enrich} disabled={!vehicle || enriching}>
+              {enriching ? "Проверяваме..." : "Автопопълни"}
+            </Button>
+            <HelpTip>
+              Автопопълване прави проверка за ГО / ГТП / Винетка (може да поиска
+              CAPTCHA).
+            </HelpTip>
+          </div>
           <Button
             variant="outline"
             onClick={() => setEditOpen(true)}
@@ -274,6 +395,13 @@ export default function VehicleDetailsPage() {
           </Button>
         </div>
       </div>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => router.push(`/profile?car=${id}#history`)}
+      >
+        История
+      </Button>
 
       {/* Tabs */}
       <Tabs defaultValue="summary" className="space-y-3">
@@ -297,6 +425,22 @@ export default function VehicleDetailsPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="pb-4">
+                    <div className="mt-3 flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openManual(t)}
+                      >
+                        + Ръчно
+                      </Button>
+
+                      {(t === "GO" || t === "GTP" || t === "VIGNETTE") && (
+                        <Button size="sm" onClick={enrich} disabled={enriching}>
+                          Авто
+                        </Button>
+                      )}
+                    </div>
+
                     <div className="text-2xl font-semibold">
                       {o ? fmtDate(o.dueDate) : "—"}
                     </div>
@@ -398,67 +542,237 @@ export default function VehicleDetailsPage() {
         <TabsContent value="docs" className="space-y-3">
           <Card className="bg-background/70 backdrop-blur">
             <CardHeader className="py-3">
-              <CardTitle className="text-base">Документи</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {/* Upload row */}
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <div className="text-sm text-muted-foreground">
-                  Качи PDF или снимка (полица, талон, фактура…)
-                </div>
-                <div className="flex items-center gap-2">
+                <CardTitle className="text-base">Документи</CardTitle>
+
+                <div className="w-full md:w-72">
                   <Input
-                    type="file"
-                    accept=".pdf,image/*"
-                    className="max-w-xs"
-                    onChange={async (e) => {
-                      const f = e.target.files?.[0];
-                      if (!f) return;
-                      await uploadDoc(f);
-                      e.currentTarget.value = "";
-                    }}
+                    value={docQuery}
+                    onChange={(e) => setDocQuery(e.target.value)}
+                    placeholder="Търси по име…"
                   />
-                  <Button variant="outline" disabled={uploading}>
-                    {uploading ? "Качваме..." : "Качи"}
-                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+
+            <CardContent className="space-y-4">
+              {/* Upload section */}
+              <div className="rounded-xl border bg-background/40 p-3">
+                <div className="text-sm font-semibold">Качи документ</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  Избери категория, (по желание) връзка към конкретно задължение
+                  и файл.
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
+                  {/* Category */}
+                  <select
+                    className="border rounded-md px-3 py-2 text-sm bg-background"
+                    value={docCategory}
+                    onChange={(e) =>
+                      setDocCategory(e.target.value as DocCategory)
+                    }
+                  >
+                    <option value="GO">ГО – Застраховка</option>
+                    <option value="GTP">ГТП – Техн. преглед</option>
+                    <option value="TAX">Данък</option>
+                    <option value="VIGNETTE">Винетка</option>
+                    <option value="SERVICE">Сервиз</option>
+                    <option value="CREDIT">Кредит</option>
+                    <option value="OTHER">Друго</option>
+                  </select>
+
+                  {/* Link to obligation (optional) */}
+                  <div className="space-y-1">
+                    <select
+                      className="border rounded-md px-3 py-2 text-sm bg-background w-full"
+                      value={docObligationId ?? ""}
+                      onChange={(e) =>
+                        setDocObligationId(e.target.value || null)
+                      }
+                    >
+                      <option value="">Без връзка</option>
+
+                      {obligationsForDocLink.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {obligationShort(o.type)} · до {fmtDate(o.dueDate)}
+                        </option>
+                      ))}
+                    </select>
+
+                    {!obligationsForDocLink.length && (
+                      <div className="text-[11px] text-muted-foreground">
+                        Няма намерено задължение от този тип за тази кола.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* File */}
+                  <div className="space-y-1">
+                    <Input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pdf,image/*"
+                      disabled={uploading}
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0];
+                        if (!f) return;
+
+                        await uploadDoc(f);
+
+                        if (fileInputRef.current) {
+                          fileInputRef.current.value = "";
+                        }
+                      }}
+                    />
+                    <div className="text-[11px] text-muted-foreground">
+                      PDF или снимка. Макс размер според бекенда.
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Docs list */}
-              <div className="space-y-2">
-                {docs.map((d) => (
-                  <div
-                    key={d.id}
-                    className="flex items-center justify-between rounded-lg border p-3"
-                  >
-                    <div className="min-w-0">
-                      <div className="font-medium truncate">{d.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {fmtDate(d.createdAt)} ·{" "}
-                        {(d.sizeBytes / 1024).toFixed(0)} KB
-                      </div>
-                    </div>
-
-                    <a
-                      className="text-sm underline shrink-0"
-                      href={docsApi.downloadUrl(d.id)}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Изтегли
-                    </a>
+              {/* Files section */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-semibold">Файлове</div>
+                  <div className="text-xs text-muted-foreground">
+                    Общо: {filteredDocs.length}
                   </div>
-                ))}
-                {docs.length === 0 && (
-                  <div className="text-sm text-muted-foreground">
+                </div>
+
+                {filteredDocs.length === 0 ? (
+                  <div className="rounded-xl border bg-background/40 p-4 text-sm text-muted-foreground">
                     Няма качени документи.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {Object.entries(docsByCategory).map(([cat, items]) => (
+                      <div key={cat} className="space-y-2">
+                        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          {obligationShort(cat as any)} · {items.length}
+                        </div>
+
+                        <div className="rounded-xl border bg-background/40 divide-y">
+                          {items.map((d) => (
+                            <div
+                              key={d.id}
+                              className="flex flex-col gap-2 p-3 md:flex-row md:items-center md:justify-between"
+                            >
+                              <div className="min-w-0">
+                                <div className="font-medium truncate">
+                                  {d.name}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {fmtDate(d.createdAt)}
+                                  {d.obligation && (
+                                    <>
+                                      {" "}
+                                      · към {obligationShort(d.obligation.type)}
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                <Button asChild variant="outline" size="sm">
+                                  <a
+                                    href={docsApi.downloadUrl(d.id)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    Изтегли
+                                  </a>
+                                </Button>
+
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => setDeleteDoc(d)}
+                                >
+                                  Изтрий
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
             </CardContent>
           </Card>
+
+          {/* Delete confirm dialog */}
+          <Dialog
+            open={!!deleteDoc}
+            onOpenChange={(o) => !o && setDeleteDoc(null)}
+          >
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Изтриване на документ</DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-3">
+                <div className="text-sm text-muted-foreground">
+                  Сигурен ли си, че искаш да изтриеш{" "}
+                  <span className="font-semibold text-foreground">
+                    {deleteDoc?.name}
+                  </span>
+                  ?
+                </div>
+
+                <div className="flex gap-2 justify-end">
+                  <Button
+                    variant="outline"
+                    onClick={() => setDeleteDoc(null)}
+                    disabled={deletingDoc}
+                  >
+                    Отказ
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={() => deleteDoc && confirmDeleteDoc(deleteDoc)}
+                    disabled={!deleteDoc || deletingDoc}
+                  >
+                    {deletingDoc ? "Изтриваме..." : "Изтрий"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
       </Tabs>
+      <Dialog open={manualOpen} onOpenChange={setManualOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {nextByType[manualType] ? "Редакция" : "Задаване"}:
+              {obligationShort(manualType)}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <div className="text-sm text-muted-foreground">Валидно до</div>
+              <Input
+                type="date"
+                value={manualDueDate}
+                onChange={(e) => setManualDueDate(e.target.value)}
+              />
+            </div>
+
+            <Button
+              className="w-full"
+              onClick={saveManual}
+              disabled={manualSaving}
+            >
+              {manualSaving ? "Записваме..." : "Запази"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit vehicle modal */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>

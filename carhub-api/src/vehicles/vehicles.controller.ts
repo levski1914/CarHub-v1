@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -62,6 +63,20 @@ export class VehiclesController {
     @Body() body: { type: ObligationType; dueDate: string },
   ) {
     return this.svc.createObligation(req.user.userId, id, body);
+  }
+  @Put(':id/obligations/:type')
+  upsertObligation(
+    @Req() req: any,
+    @Param('id') vehicleId: string,
+    @Param('type') type: ObligationType,
+    @Body() body: { dueDate: string },
+  ) {
+    return this.svc.upsertObligation(
+      req.user.userId,
+      vehicleId,
+      type,
+      body.dueDate,
+    );
   }
 
   @Post(':id/enrich')

@@ -11,10 +11,15 @@ import {
 import * as express from 'express';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { PrismaService } from 'src/prisma.service';
+import { createHash as nodeCreateHash } from 'crypto';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private auth: AuthService) {}
+  constructor(
+    private auth: AuthService,
+    private prisma: PrismaService,
+  ) {}
 
   @Post('register')
   async register(@Body() body: { email: string; password: string }) {
@@ -34,16 +39,18 @@ export class AuthController {
     const accessToken = this.auth.signAccessToken(user.id);
     const refreshToken = this.auth.signRefreshToken(user.id);
 
+    await this.auth.setRefreshToken(user.id, refreshToken);
+
     const cookieBase = {
       httpOnly: true,
       sameSite: 'lax' as const,
-      secure: false, // true в prod
+      secure: process.env.NODE_ENV === 'production',
       path: '/',
     };
 
     res.cookie('access_token', accessToken, {
       ...cookieBase,
-      maxAge: 24 * 60 * 60 * 1000, // 1 ден
+      maxAge: 15 * 60 * 1000,
     });
 
     res.cookie('refresh_token', refreshToken, {
@@ -54,51 +61,113 @@ export class AuthController {
     return { ok: true };
   }
 
-  @Post('refresh')
-  async refresh(
-    @Req() req: any,
-    @Res({ passthrough: true }) res: express.Response,
-  ) {
-    const token = req.cookies?.refresh_token;
-    if (!token) throw new UnauthorizedException();
+  @Post('verify-email')
+  async verifyEmail(@Body() body: { token: string }) {
+    const hash = nodeCreateHash('sha256').update(body.token).digest('hex');
 
-    const payload = this.auth.verifyRefreshToken(token);
-    const accessToken = this.auth.signAccessToken(payload.sub());
-
-    res.cookie('access_token', accessToken, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: false,
-      path: '/',
-      maxAge: 24 * 60 * 60 * 1000,
+    const user = await this.prisma.user.findFirst({
+      where: { emailVerifyToken: hash },
     });
 
-    return { ok: true };
-  }
+    if (!user) throw new UnauthorizedException('Invalid or expired token');
 
-  @Post('logout')
-  logout(@Res({ passthrough: true }) res: express.Response) {
-    res.clearCookie('access_token', {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: false, // true в prod
-      path: '/',
-    });
-
-    res.clearCookie('refresh_token', {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: false,
-      path: '/',
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        emailVerified: true,
+        emailVerifyToken: null,
+        emailVerifySentAt: null,
+      },
     });
 
     return { ok: true };
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post('resend-verify-email')
+  async resendVerifyEmail(@Req() req: any) {
+    const userId = req.user.userId;
+    await this.auth.sendVerifyEmail(userId);
+    return { ok: true };
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get('me')
-  me(@Req() req: any) {
-    // в guard-а ще сложим req.user = { userId }
-    return { userId: req.user.userId };
+  async me(@Req() req: any) {
+    const userId = req.user.userId;
+    const u = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, emailVerified: true },
+    });
+
+    return {
+      userId: u?.id,
+      email: u?.email,
+      emailVerified: !!u?.emailVerified,
+    };
+  }
+
+  @Post('refresh')
+  async refresh(
+    @Req() req: any,
+    @Res({ passthrough: true }) res: express.Response,
+  ) {
+    const cookieBase = {
+      httpOnly: true,
+      sameSite: 'lax' as const,
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+    };
+
+    const token = req.cookies?.refresh_token;
+    if (!token) throw new UnauthorizedException();
+
+    const userId = this.auth.verifyRefreshToken(token);
+    const ok = await this.auth.validateRefreshToken(userId, token);
+    if (!ok) throw new UnauthorizedException();
+
+    const newAccess = this.auth.signAccessToken(userId);
+    const newRefresh = this.auth.signRefreshToken(userId);
+    await this.auth.setRefreshToken(userId, newRefresh);
+
+    res.cookie('access_token', newAccess, {
+      ...cookieBase,
+      maxAge: 15 * 60 * 1000,
+    });
+    res.cookie('refresh_token', newRefresh, {
+      ...cookieBase,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return { ok: true };
+  }
+
+  @Post('logout')
+  async logout(
+    @Req() req: any,
+    @Res({ passthrough: true }) res: express.Response,
+  ) {
+    const token = req.cookies?.refresh_token;
+
+    if (token) {
+      try {
+        const userId = this.auth.verifyRefreshToken(token);
+        await this.auth.clearRefreshToken(userId);
+      } catch {
+        // ignore
+      }
+    }
+
+    const cookieBase = {
+      httpOnly: true,
+      sameSite: 'lax' as const,
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+    };
+
+    res.clearCookie('access_token', cookieBase);
+    res.clearCookie('refresh_token', cookieBase);
+
+    return { ok: true };
   }
 }

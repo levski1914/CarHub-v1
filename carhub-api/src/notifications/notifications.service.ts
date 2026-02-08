@@ -4,6 +4,8 @@ import { PrismaService } from '../prisma.service';
 import { EmailChannel } from './providers/email.channel';
 import { SmsChannel } from './providers/sms.channel';
 import { reminderEmailHtml } from './templates/reminder.email';
+import { HistoryService } from 'src/history/history.service';
+import { InboxService } from 'src/inbox/inbox.service';
 
 function isoDateOnly(d: Date) {
   // YYYY-MM-DD
@@ -16,6 +18,8 @@ export class NotificationsService {
     private prisma: PrismaService,
     private email: EmailChannel,
     private sms: SmsChannel,
+    private history: HistoryService,
+    private inbox: InboxService,
   ) {}
 
   // На всеки 10 мин. за MVP (лесно за тест).
@@ -28,42 +32,50 @@ export class NotificationsService {
     const settings = await this.prisma.notificationSettings.findMany({
       where: {
         OR: [{ emailEnabled: true }, { smsEnabled: true }],
+        user: {
+          OR: [
+            { emailVerified: true }, // за email
+            {}, // sms може и без verified (ако искаш)
+          ],
+        },
       },
       include: { user: true },
     });
     // console.log('[notifications] settings count =', settings.length);
 
     for (const s of settings) {
-      await this.processUser(s.userId);
+      await this.processUser(s);
     }
   }
 
-  private async processUser(userId: string) {
-    const s = await this.prisma.notificationSettings.findUnique({
-      where: { userId },
-    });
+  private async processUser(s: any) {
     if (!s) return;
 
-    // взимаме всички задължения за всички коли на този user
-    // IMPORTANT: Vehicle трябва да има userId
+    const userId = s.userId;
+    const emailVerified = !!s.user?.emailVerified;
+
+    function dateKeyUTC(d: Date) {
+      return d.toISOString().slice(0, 10);
+    }
+    function utcMidnightMs(key: string) {
+      return new Date(key + 'T00:00:00.000Z').getTime();
+    }
+
     const obligations = await this.prisma.obligation.findMany({
       where: { vehicle: { userId } },
       include: { vehicle: true },
     });
-    // console.log(
-    //   '[notifications] obligations for user',
-    //   userId,
-    //   obligations.length,
-    // );
 
-    const now = new Date();
-    const today = new Date(isoDateOnly(now) + 'T00:00:00.000Z');
+    const todayKey = dateKeyUTC(new Date());
+    const todayMs = utcMidnightMs(todayKey);
 
     for (const o of obligations) {
       const due = o.dueDate;
-      const daysDiff = Math.ceil((due.getTime() - today.getTime()) / 86400000);
+      const dueKey = dateKeyUTC(due);
+      const dueMs = utcMidnightMs(dueKey);
 
-      // overdue
+      const daysDiff = Math.round((dueMs - todayMs) / 86400000);
+
       if (daysDiff < 0) {
         await this.notifyOnce({
           userId,
@@ -72,6 +84,7 @@ export class NotificationsService {
           kind: 'overdue',
           daysDiff,
           settings: s,
+          emailVerified, // ✅ добавено
           plate: o.vehicle.plate,
           dueDate: due,
           type: o.type,
@@ -79,7 +92,6 @@ export class NotificationsService {
         continue;
       }
 
-      // before due (7/3/1)
       if (s.daysBefore.includes(daysDiff)) {
         await this.notifyOnce({
           userId,
@@ -88,6 +100,7 @@ export class NotificationsService {
           kind: 'before_due',
           daysDiff,
           settings: s,
+          emailVerified, // ✅ добавено
           plate: o.vehicle.plate,
           dueDate: due,
           type: o.type,
@@ -102,6 +115,7 @@ export class NotificationsService {
     obligationId: string;
     kind: 'before_due' | 'overdue';
     daysDiff: number;
+    emailVerified: boolean;
     settings: any;
     plate: string;
     dueDate: Date;
@@ -166,7 +180,7 @@ export class NotificationsService {
 
     // пращане
     try {
-      if (settings.emailEnabled && settings.email) {
+      if (settings.emailEnabled && settings.email && input.emailVerified) {
         const html = reminderEmailHtml({
           title,
           plate,
@@ -177,6 +191,23 @@ export class NotificationsService {
         });
 
         await this.email.sendHtml(settings.email, title, html);
+        await this.inbox.create({
+          userId,
+          type: 'reminder',
+          title,
+          body: text,
+          href: `/vehicles/${vehicleId}`, // или към obligations tab
+          meta: { obligationId, kind, daysDiff, channel: 'email' },
+        });
+        await this.history.log({
+          userId,
+          kind: 'notification_sent',
+          title: 'Изпратено известие',
+          description: `${label} за ${plate} (${kind})`,
+          vehicleId,
+          obligationId,
+          meta: { channel: 'email', kind, daysDiff },
+        });
 
         await this.prisma.notificationLog.create({
           data: {
@@ -192,6 +223,7 @@ export class NotificationsService {
           },
         });
       }
+
       if (settings.smsEnabled && settings.phone) {
         await this.sms.send(settings.phone, `${title}\n${text}`);
         await this.prisma.notificationLog

@@ -3,6 +3,8 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaService } from './prisma.service';
 // import { PrismaService } from './prisma/prisma.service';
+import { InboxModule } from './inbox/inbox.module';
+import { HistoryModule } from './history/history.module';
 import { DocumentsModule } from './documents/documents.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { VehiclesModule } from './vehicles/vehicles.module';
@@ -24,6 +26,8 @@ import { ScheduleModule } from '@nestjs/schedule';
     VehiclesModule,
     NotificationsModule,
     DocumentsModule,
+    HistoryModule,
+    InboxModule,
   ],
   controllers: [AppController, GtpController],
   providers: [AppService, PrismaService, GtpService],

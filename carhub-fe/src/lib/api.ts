@@ -17,6 +17,14 @@ export type Vehicle = {
   model: string;
   status: VehicleStatus;
 };
+export type DocumentCategory =
+  | "GO"
+  | "GTP"
+  | "VIGNETTE"
+  | "TAX"
+  | "SERVICE"
+  | "CREDIT"
+  | "OTHER";
 
 export type ObligationType =
   | "Гражданска отговорност"
@@ -51,6 +59,58 @@ export type EnrichResponse = {
   vehicleId: string;
   results: EnrichResult[];
 };
+export type NotificationSettings = {
+  emailEnabled: boolean;
+  smsEnabled: boolean;
+  email?: string | null;
+  phone?: string | null;
+  daysBefore: number[];
+};
+export type InboxItem = {
+  id: string;
+  type: "reminder" | "system" | "activity";
+  title: string;
+  body?: string | null;
+  href?: string | null;
+  readAt?: string | null;
+  createdAt: string;
+};
+
+export const inboxApi = {
+  list: (take = 20) => http<InboxItem[]>(`/api/inbox?take=${take}`),
+  unreadCount: () => http<{ count: number }>(`/api/inbox/unread-count`),
+  read: (id: string) => http(`/api/inbox/${id}/read`, { method: "POST" }),
+  readAll: () => http(`/api/inbox/read-all`, { method: "POST" }),
+  del: (id: string) => http(`/api/inbox/${id}/delete`, { method: "POST" }),
+  clear: () => http(`/api/inbox/clear`, { method: "POST" }),
+};
+
+export const notificationsApi = {
+  get: () => http<NotificationSettings>("/api/notifications/settings"),
+  update: (data: Partial<NotificationSettings>) =>
+    http<NotificationSettings>("/api/notifications/settings", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+};
+
+export const historyApi = {
+  list: (params?: {
+    vehicleId?: string;
+    kind?: string;
+    q?: string;
+    take?: number;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params?.vehicleId) qs.set("vehicleId", params.vehicleId);
+    if (params?.kind) qs.set("kind", params.kind);
+    if (params?.q) qs.set("q", params.q);
+    if (params?.take) qs.set("take", String(params.take));
+
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return http<HistoryEvent[]>(`/api/history${suffix}`);
+  },
+};
 
 // ✅ base URL
 const API_BASE_RAW = process.env.NEXT_PUBLIC_API_BASE?.trim();
@@ -75,18 +135,53 @@ async function readError(res: Response) {
   return txt;
 }
 
-async function http<T>(path: string, init: RequestInit = {}): Promise<T> {
+let refreshing: Promise<void> | null = null;
+
+async function doRefresh() {
+  const url = `${base}/api/auth/refresh`;
+  const res = await fetch(url, { method: "POST", credentials: "include" });
+
+  if (!res.ok) throw new Error("refresh failed");
+}
+
+async function http<T>(
+  path: string,
+  init: RequestInit = {},
+  retry = true,
+): Promise<T> {
   const url = `${base}${path}`;
 
   const res = await fetch(url, {
     ...init,
     headers: {
-      "Content-Type": "application/json",
+      ...(init.body instanceof FormData
+        ? {}
+        : { "Content-Type": "application/json" }),
       ...(init.headers ?? {}),
     },
-    credentials: "include", // ⭐️ MUST for HttpOnly cookies
+    credentials: "include",
     cache: "no-store",
   });
+
+  // ✅ ако е 401 → опитай refresh 1 път → retry
+  if (res.status === 401 && retry) {
+    try {
+      if (!refreshing) {
+        refreshing = doRefresh().finally(() => (refreshing = null));
+      }
+      await refreshing;
+      return http<T>(path, init, false);
+    } catch {
+      // ако refresh fail → logout и хвърляй
+      try {
+        await fetch(`${base}/api/auth/logout`, {
+          method: "POST",
+          credentials: "include",
+        });
+      } catch {}
+      throw new Error("HTTP 401: session expired");
+    }
+  }
 
   if (!res.ok) {
     const msg = await readError(res);
@@ -140,8 +235,19 @@ export const integrations = {
 export type DocumentRow = {
   id: string;
   userId: string;
+
   vehicleId?: string | null;
   obligationId?: string | null;
+
+  category: DocumentCategory;
+
+  // ако бекендът връща populate-нато задължение (препоръчително)
+  obligation?: {
+    id: string;
+    type: ObligationType;
+    dueDate: string;
+  } | null;
+
   name: string;
   mimeType: string;
   sizeBytes: number;
@@ -160,11 +266,13 @@ export const docsApi = {
     file: File;
     vehicleId?: string;
     obligationId?: string;
+    category: DocumentCategory;
   }) => {
     const url = `${base}/api/documents/upload`;
 
     const fd = new FormData();
     fd.append("file", data.file);
+    fd.append("category", data.category);
     if (data.vehicleId) fd.append("vehicleId", data.vehicleId);
     if (data.obligationId) fd.append("obligationId", data.obligationId);
 
@@ -180,7 +288,10 @@ export const docsApi = {
     }
     return (await res.json()) as DocumentRow;
   },
-
+  delete: (id: string) =>
+    http<{ ok: true }>(`/api/documents/${id}`, {
+      method: "DELETE",
+    }),
   downloadUrl: (id: string) => `${base}/api/documents/${id}/download`,
 };
 
@@ -199,7 +310,11 @@ export const auth = {
       credentials: "include",
     });
   },
-
+  verifyEmail: (token: string) =>
+    http<{ ok: true }>(`/api/auth/verify-email`, {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
   // ✅ кой е логнат (за Navbar / guards)
   me: () =>
     http<{ userId: string }>("/api/auth/me", {
@@ -211,6 +326,9 @@ export const auth = {
     http<{ ok: true }>("/api/auth/logout", {
       method: "POST",
     }),
+
+  resendVerifyEmail: () =>
+    http<{ ok: true }>(`/api/auth/resend-verify-email`, { method: "POST" }),
 };
 
 export const api = {
@@ -247,6 +365,21 @@ export const api = {
     http<Obligation>(`/api/vehicles/${vehicleId}/obligations`, {
       method: "POST",
       body: JSON.stringify(data),
+    }),
+  // Obligations (upsert – 1 per type)
+  upsertObligation: (
+    vehicleId: string,
+    type: string,
+    data: { dueDate: string },
+  ) =>
+    http<Obligation>(`/api/vehicles/${vehicleId}/obligations/${type}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteObligation: (vehicleId: string, type: string) =>
+    http<{ status: "ok" }>(`/api/vehicles/${vehicleId}/obligations/${type}`, {
+      method: "DELETE",
     }),
 
   enrichVehicle: (

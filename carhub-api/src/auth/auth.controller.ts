@@ -13,7 +13,47 @@ import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { PrismaService } from 'src/prisma.service';
 import { createHash as nodeCreateHash } from 'crypto';
+import type { CookieOptions } from 'express';
 
+function getCookieBase(): CookieOptions {
+  // Ако е зададено в env — това е "истината"
+  const sameSiteEnv = (process.env.COOKIE_SAMESITE || '').toLowerCase();
+  const secureEnv = (process.env.COOKIE_SECURE || '').toLowerCase();
+
+  const isProd = process.env.NODE_ENV === 'production';
+
+  // 1) SameSite
+  // - prod: none (за cross-site FE/BE)
+  // - dev: lax
+  const sameSite: CookieOptions['sameSite'] =
+    sameSiteEnv === 'none'
+      ? 'none'
+      : sameSiteEnv === 'lax'
+        ? 'lax'
+        : sameSiteEnv === 'strict'
+          ? 'strict'
+          : isProd
+            ? 'none'
+            : 'lax';
+
+  // 2) Secure
+  // - ако SameSite=None → secure трябва да е true (браузърите го изискват)
+  const secure =
+    secureEnv === 'true'
+      ? true
+      : secureEnv === 'false'
+        ? false
+        : sameSite === 'none'
+          ? true
+          : isProd;
+
+  return {
+    httpOnly: true,
+    sameSite,
+    secure,
+    path: '/',
+  };
+}
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -41,12 +81,7 @@ export class AuthController {
 
     await this.auth.setRefreshToken(user.id, refreshToken);
 
-    const cookieBase = {
-      httpOnly: true,
-      sameSite: 'lax' as const,
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-    };
+    const cookieBase = getCookieBase();
 
     res.cookie('access_token', accessToken, {
       ...cookieBase,
@@ -112,12 +147,7 @@ export class AuthController {
     @Req() req: any,
     @Res({ passthrough: true }) res: express.Response,
   ) {
-    const cookieBase = {
-      httpOnly: true,
-      sameSite: 'lax' as const,
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-    };
+    const cookieBase = getCookieBase();
 
     const token = req.cookies?.refresh_token;
     if (!token) throw new UnauthorizedException();
@@ -158,13 +188,7 @@ export class AuthController {
       }
     }
 
-    const cookieBase = {
-      httpOnly: true,
-      sameSite: 'lax' as const,
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-    };
-
+    const cookieBase = getCookieBase();
     res.clearCookie('access_token', cookieBase);
     res.clearCookie('refresh_token', cookieBase);
 

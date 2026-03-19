@@ -52,6 +52,33 @@ const auth_service_1 = require("./auth.service");
 const jwt_auth_guard_1 = require("./jwt-auth.guard");
 const prisma_service_1 = require("../prisma.service");
 const crypto_1 = require("crypto");
+function getCookieBase() {
+    const sameSiteEnv = (process.env.COOKIE_SAMESITE || '').toLowerCase();
+    const secureEnv = (process.env.COOKIE_SECURE || '').toLowerCase();
+    const isProd = process.env.NODE_ENV === 'production';
+    const sameSite = sameSiteEnv === 'none'
+        ? 'none'
+        : sameSiteEnv === 'lax'
+            ? 'lax'
+            : sameSiteEnv === 'strict'
+                ? 'strict'
+                : isProd
+                    ? 'none'
+                    : 'lax';
+    const secure = secureEnv === 'true'
+        ? true
+        : secureEnv === 'false'
+            ? false
+            : sameSite === 'none'
+                ? true
+                : isProd;
+    return {
+        httpOnly: true,
+        sameSite,
+        secure,
+        path: '/',
+    };
+}
 let AuthController = class AuthController {
     auth;
     prisma;
@@ -67,12 +94,7 @@ let AuthController = class AuthController {
         const accessToken = this.auth.signAccessToken(user.id);
         const refreshToken = this.auth.signRefreshToken(user.id);
         await this.auth.setRefreshToken(user.id, refreshToken);
-        const cookieBase = {
-            httpOnly: true,
-            sameSite: 'lax',
-            secure: process.env.NODE_ENV === 'production',
-            path: '/',
-        };
+        const cookieBase = getCookieBase();
         res.cookie('access_token', accessToken, {
             ...cookieBase,
             maxAge: 15 * 60 * 1000,
@@ -118,12 +140,7 @@ let AuthController = class AuthController {
         };
     }
     async refresh(req, res) {
-        const cookieBase = {
-            httpOnly: true,
-            sameSite: 'lax',
-            secure: process.env.NODE_ENV === 'production',
-            path: '/',
-        };
+        const cookieBase = getCookieBase();
         const token = req.cookies?.refresh_token;
         if (!token)
             throw new common_1.UnauthorizedException();
@@ -154,12 +171,7 @@ let AuthController = class AuthController {
             catch {
             }
         }
-        const cookieBase = {
-            httpOnly: true,
-            sameSite: 'lax',
-            secure: process.env.NODE_ENV === 'production',
-            path: '/',
-        };
+        const cookieBase = getCookieBase();
         res.clearCookie('access_token', cookieBase);
         res.clearCookie('refresh_token', cookieBase);
         return { ok: true };

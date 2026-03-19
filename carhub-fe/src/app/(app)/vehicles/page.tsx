@@ -46,11 +46,12 @@ function fmtDate(iso?: string) {
   });
 }
 
-function typeLabel(t: Obligation["type"]) {
-  if (t === "Гражданска отговорност") return "ГО";
-  if (t === "Технически преглед") return "ГТП";
+function typeLabel(t: string) {
+  if (t === "GO" || t === "Гражданска отговорност") return "ГО";
+  if (t === "GTP" || t === "Технически преглед") return "ГТП";
   if (t === "TAX") return "Данък";
-  return "Винетка";
+  if (t === "VIGNETTE" || t === "Винетка") return "Винетка";
+  return t;
 }
 
 function pickDisplay(list?: Obligation[]) {

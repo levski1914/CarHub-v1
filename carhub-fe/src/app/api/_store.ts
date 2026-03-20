@@ -12,14 +12,14 @@ export const store: {
     {
       id: "o1",
       vehicleId: "v1",
-      type: "Гражданска отговорност",
+      type: "GO",
       dueDate: new Date(Date.now() + 3 * 86400000).toISOString(),
       status: "soon",
     },
     {
       id: "o2",
       vehicleId: "v1",
-      type: "Технически преглед",
+      type: "GTP",
       dueDate: new Date(Date.now() + 20 * 86400000).toISOString(),
       status: "ok",
     },

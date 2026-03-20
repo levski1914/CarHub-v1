@@ -9,7 +9,28 @@
 // Ако НЯМАШ префикс, махни "/api" отпред от всички пътища по-долу.
 
 export type VehicleStatus = "ok" | "soon" | "overdue";
+export type HistoryKind =
+  | "doc_uploaded"
+  | "doc_deleted"
+  | "obligation_updated"
+  | "enrich_checked"
+  | "vehicle_created"
+  | "vehicle_updated"
+  | "vehicle_deleted"
+  | "notification_sent";
 
+export type HistoryEvent = {
+  id: string;
+  userId: string;
+  kind: HistoryKind;
+  title: string;
+  description?: string | null;
+  vehicleId?: string | null;
+  obligationId?: string | null;
+  documentId?: string | null;
+  meta?: any;
+  createdAt: string;
+};
 export type Vehicle = {
   id: string;
   plate: string;
@@ -26,11 +47,7 @@ export type DocumentCategory =
   | "CREDIT"
   | "OTHER";
 
-export type ObligationType =
-  | "Гражданска отговорност"
-  | "Технически преглед"
-  | "TAX"
-  | "Винетка";
+export type ObligationType = "GO" | "GTP" | "VIGNETTE" | "TAX";
 
 export type Obligation = {
   id: string;
@@ -317,10 +334,12 @@ export const auth = {
     }),
   // ✅ кой е логнат (за Navbar / guards)
   me: () =>
-    http<{ userId: string }>("/api/auth/me", {
-      method: "GET",
-    }),
-
+    http<{ userId: string; email: string; emailVerified: boolean }>(
+      "/api/auth/me",
+      {
+        method: "GET",
+      },
+    ),
   // ✅ чисти cookies от бекенда
   logout: () =>
     http<{ ok: true }>("/api/auth/logout", {

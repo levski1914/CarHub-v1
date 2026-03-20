@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+
 import Link from "next/link";
 import {
   Car,
@@ -163,7 +163,6 @@ const MOCK: HistoryEvent[] = [
 ];
 
 export default function ProfilePage() {
-  const searchParams = useSearchParams();
   const [tab, setTab] = useState<"profile" | "history">("history");
 
   // vehicles

@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { auth } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
-export default function VerifyEmailPage() {
+function VerifyEmailContent() {
   const sp = useSearchParams();
   const router = useRouter();
   const token = sp.get("token");
@@ -63,5 +63,13 @@ export default function VerifyEmailPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function VerifyEmailPage() {
+  return (
+    <Suspense fallback={<div className="max-w-lg mx-auto p-4">Зареждане…</div>}>
+      <VerifyEmailContent />
+    </Suspense>
   );
 }

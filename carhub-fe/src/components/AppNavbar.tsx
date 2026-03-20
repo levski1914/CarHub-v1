@@ -24,7 +24,11 @@ const NavLink = ({ href, label }: { href: string; label: string }) => {
 
 export default function AppNavbar() {
   const router = useRouter();
-  const [me, setMe] = useState<{ emailVerified?: boolean } | null>(null);
+  const [me, setMe] = useState<{
+    userId: string;
+    email: string;
+    emailVerified: boolean;
+  } | null>(null);
   const [ns, setNs] = useState<{
     emailEnabled: boolean;
     smsEnabled: boolean;

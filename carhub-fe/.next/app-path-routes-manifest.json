@@ -1,0 +1,15 @@
+{
+  "/(app)/profile/page": "/profile",
+  "/(app)/vehicles/[id]/page": "/vehicles/[id]",
+  "/(app)/vehicles/new/page": "/vehicles/new",
+  "/(app)/vehicles/page": "/vehicles",
+  "/(app)/verify-email/page": "/verify-email",
+  "/(public)/login/page": "/login",
+  "/(public)/page": "/",
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/api/vehicles/[id]/obligations/route": "/api/vehicles/[id]/obligations",
+  "/api/vehicles/[id]/route": "/api/vehicles/[id]",
+  "/api/vehicles/route": "/api/vehicles",
+  "/favicon.ico/route": "/favicon.ico"
+}

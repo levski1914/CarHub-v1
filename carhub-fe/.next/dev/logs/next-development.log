@@ -1,0 +1,26 @@
+[00:00:01.764] Server  WARN    ⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+[00:00:02.020] Server  LOG     ✓ Ready in 1555ms
+[00:18:01.833] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:26:51.326] Server  LOG       Reload env: .env
+[00:26:51.533] Server  LOG     ✓ Compiled in 95ms
+[00:27:03.134] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:28:16.155] Browser ERROR   unhandledRejection: Error: HTTP 401: session expired
+[00:28:16.844] Browser ERROR   unhandledRejection: Error: HTTP 401: session expired
+[00:29:03.747] Browser ERROR   unhandledRejection: Error: HTTP 401: session expired
+[00:30:03.957] Browser ERROR   unhandledRejection: Error: HTTP 401: session expired
+[00:31:03.589] Browser ERROR   unhandledRejection: Error: HTTP 401: session expired
+[00:32:03.764] Browser ERROR   unhandledRejection: Error: HTTP 401: session expired
+[00:33:03.731] Browser ERROR   unhandledRejection: Error: HTTP 401: session expired
+[00:34:04.731] Browser ERROR   unhandledRejection: Error: HTTP 401: session expired
+[00:35:47.734] Browser ERROR   unhandledRejection: Error: HTTP 401: session expired
+[00:36:05.386] Browser ERROR   unhandledRejection: Error: HTTP 401: session expired
+[00:36:15.281] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:36:16.094] Browser ERROR   unhandledRejection: Error: HTTP 401: session expired
+[00:36:49.890] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:36:50.493] Browser ERROR   unhandledRejection: Error: HTTP 401: session expired
+[00:36:54.985] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:36:55.614] Browser ERROR   unhandledRejection: Error: HTTP 401: session expired
+[00:37:25.235] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:39:37.389] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:47:16.937] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:50:11.709] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold

@@ -1,0 +1,51 @@
+{
+  "sorted_middleware": [],
+  "middleware": {
+    "/": {
+      "files": [
+        "server/edge/chunks/node_modules_next_dist_4a502595._.js",
+        "server/edge/chunks/[root-of-the-server]__8978dbac._.js",
+        "server/edge/chunks/turbopack-node_modules_next_dist_esm_build_templates_edge-wrapper_e64262d9.js"
+      ],
+      "name": "middleware",
+      "page": "/",
+      "matchers": [
+        {
+          "regexp": "/:nextData(_next/data/[^/]{1,})?/(/?index|/?index\\\\.json)?",
+          "originalSource": "/"
+        },
+        {
+          "regexp": "/:nextData(_next/data/[^/]{1,})?/login{(\\\\.json)}?",
+          "originalSource": "/login"
+        },
+        {
+          "regexp": "/:nextData(_next/data/[^/]{1,})?/vehicles/:path*{(\\\\.json)}?",
+          "originalSource": "/vehicles/:path*"
+        },
+        {
+          "regexp": "/:nextData(_next/data/[^/]{1,})?/calendar/:path*{(\\\\.json)}?",
+          "originalSource": "/calendar/:path*"
+        },
+        {
+          "regexp": "/:nextData(_next/data/[^/]{1,})?/settings/:path*{(\\\\.json)}?",
+          "originalSource": "/settings/:path*"
+        },
+        {
+          "regexp": "/:nextData(_next/data/[^/]{1,})?/profile/:path*{(\\\\.json)}?",
+          "originalSource": "/profile/:path*"
+        }
+      ],
+      "wasm": [],
+      "assets": [],
+      "env": {
+        "__NEXT_BUILD_ID": "development",
+        "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY": "h4CXIPRJ7h7Zid0lGyjATVOKPixf5YSge5oHPQP88ak=",
+        "__NEXT_PREVIEW_MODE_ID": "5ec1bc71cd1cee70d309ae71859df9aa",
+        "__NEXT_PREVIEW_MODE_ENCRYPTION_KEY": "064135eb3e7ab7b73938266dad988114c6f1a23f976fcf672170fa78351f1af4",
+        "__NEXT_PREVIEW_MODE_SIGNING_KEY": "31daff6e5e4b21453f54d1aeb0595b7674f8af2f974c04b70af59634ee085038"
+      }
+    }
+  },
+  "instrumentation": null,
+  "functions": {}
+}

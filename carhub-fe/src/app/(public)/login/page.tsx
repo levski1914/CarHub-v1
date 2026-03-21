@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { auth } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,14 +15,42 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    let active = true;
 
+    async function checkLoggedIn() {
+      try {
+        await auth.me();
+        const next =
+          new URLSearchParams(window.location.search).get("next") ||
+          "/vehicles";
+        if (active) r.replace(next);
+      } catch {
+        // ок, не е логнат
+      }
+    }
+
+    checkLoggedIn();
+
+    return () => {
+      active = false;
+    };
+  }, [r]);
   async function doLogin() {
     setErr("");
     setLoading(true);
     try {
       await auth.login(email.trim().toLowerCase(), password);
-      r.push("/vehicles");
+
+      const me = await auth.me();
+      console.log("ME AFTER LOGIN:", me);
+
+      const next =
+        new URLSearchParams(window.location.search).get("next") || "/vehicles";
+
+      r.push(next);
     } catch (e: any) {
+      console.error("LOGIN FLOW ERROR:", e);
       setErr(e.message ?? "Грешка");
     } finally {
       setLoading(false);

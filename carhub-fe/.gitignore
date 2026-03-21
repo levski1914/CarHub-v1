@@ -13,8 +13,14 @@
 # testing
 /coverage
 
-# next.js
+# next
+.next/
+out/
 
+# turbopack / next cache artifacts
+**/*.sst
+**/*.meta
+trace
 /out/
 
 # production

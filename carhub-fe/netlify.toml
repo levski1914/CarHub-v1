@@ -1,0 +1,3 @@
+[build]
+  base = "carhub-fe"
+  command = "npm run build"

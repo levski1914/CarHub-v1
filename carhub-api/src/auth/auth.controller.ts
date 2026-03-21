@@ -121,8 +121,6 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Post('resend-verify-email')
   async resendVerifyEmail(@Req() req: any) {
-    const userId = req.user.userId;
-    await this.auth.sendVerifyEmail(userId);
     return { ok: true };
   }
 

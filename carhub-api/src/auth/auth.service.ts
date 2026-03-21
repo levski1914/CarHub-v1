@@ -33,16 +33,19 @@ export class AuthService {
     try {
       const user = await this.prisma.$transaction(async (tx) => {
         const u = await tx.user.create({
-          data: { email: email.trim().toLowerCase(), passwordHash },
+          data: {
+            email: email.trim().toLowerCase(),
+            passwordHash,
+            emailVerified: true, // временно auto-verified
+          },
         });
 
-        // ✅ създаваме NotificationSettings веднага
         await tx.notificationSettings.create({
           data: {
             userId: u.id,
-            emailEnabled: true, // по default OFF
-            smsEnabled: false, // по default OFF
-            email: u.email, // ✅ взима email-а от user
+            emailEnabled: true,
+            smsEnabled: false,
+            email: u.email,
             phone: null,
             daysBefore: [7, 3, 1],
             sendHour: 9,
@@ -53,11 +56,9 @@ export class AuthService {
 
         return u;
       });
-      await this.sendVerifyEmail(user.id);
 
       return { id: user.id, email: user.email };
     } catch (e: any) {
-      // Prisma unique constraint за email
       if (e?.code === 'P2002') {
         throw new ConflictException('Email already exists');
       }
